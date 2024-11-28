@@ -132,11 +132,6 @@ def handel_gemini_parallel_func(handle_api_response, response, message_placehold
 def handle_gemini_serial_func(handle_api_response, response, message_placeholder, api_requests_and_responses, backend_details):
     response = response.candidates[0].content.parts[0]
 
-            # api_requests_and_responses = []
-            # backend_details = ""
-            # api_response = ""
-
-
     logging.warning(response)
     logging.warning("First Resonse done")
 
@@ -213,13 +208,6 @@ sql_query_tool = Tool(
         geminifunctionsbq.get_table_func,
         geminifunctionsbq.sql_query_func,
         geminifunctionfinhub.symbol_lookup,
-        geminifunctionfinhub.company_news,
-        geminifunctionfinhub.company_profile,
-        geminifunctionfinhub.company_basic_financials,
-        geminifunctionfinhub.company_peers,
-        geminifunctionfinhub.insider_sentiment,
-        geminifunctionfinhub.financials_reported,
-        geminifunctionfinhub.sec_filings,
     ],
 )
 
@@ -317,12 +305,75 @@ if prompt := st.chat_input("What is up?"):
         backend_details = ""
         api_response = ""
 
-        if len(response.candidates[0].content.parts) >1:
-            response, backend_details = handel_gemini_parallel_func(handle_api_response, response, message_placeholder, api_requests_and_responses, backend_details)
+        # if len(response.candidates[0].content.parts) >1:
+        #     response, backend_details = handel_gemini_parallel_func(handle_api_response, response, message_placeholder, api_requests_and_responses, backend_details)
 
 
-        else:
-            response, backend_details = handle_gemini_serial_func(handle_api_response, response, message_placeholder, api_requests_and_responses, backend_details)
+        # else:
+        #     response, backend_details = handle_gemini_serial_func(handle_api_response, response, message_placeholder, api_requests_and_responses, backend_details)
+
+        response = response.candidates[0].content.parts[0]
+
+        logging.warning(response)
+        logging.warning("First Resonse done")
+
+        function_calling_in_process = True
+        while function_calling_in_process:
+            try:
+                logging.warning("Function loop starting")
+                params = {}
+                for key, value in response.function_call.args.items():
+                    params[key] = value
+                        
+                logging.warning("Prams processing done")
+                logging.warning(response)
+                logging.warning(response.function_call.name)
+                logging.warning(params)
+
+                function_name = response.function_call.name
+
+                if function_name in helperbqfunction.function_handler.keys():
+                    logging.warning("BQ function found")
+                    api_response = helperbqfunction.function_handler[function_name](st.session_state.client, params)
+                    api_requests_and_responses.append(
+                                    [function_name, params, api_response]
+                            )
+
+                if function_name in helperfinhub.function_handler.keys():
+                    logging.warning("finhub function found")
+                    api_response = helperfinhub.function_handler[function_name](params)
+                    api_requests_and_responses.append(
+                                    [function_name, params, api_response]
+                            )
+
+                logging.warning("Function Response complete")
+
+                logging.warning(api_response)
+                logging.warning("Making gemin call for api response")
+
+                response = st.session_state.chat.send_message(
+                            Part.from_function_response(
+                                name=function_name,
+                                response={
+                                    "content": api_response,
+                                },
+                            ),
+                        )
+
+                logging.warning("Function Response complete")
+
+
+                backend_details = handle_api_response(message_placeholder, api_requests_and_responses, backend_details)
+                        
+                logging.warning("gemini api response completed")
+                logging.warning(response)
+                logging.warning("next call ready")
+                response = response.candidates[0].content.parts[0]
+
+
+            except AttributeError:
+                logging.warning(Exception)
+                function_calling_in_process = False
 
         time.sleep(3)
 
