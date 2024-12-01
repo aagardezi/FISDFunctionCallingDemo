@@ -200,14 +200,15 @@ BIGQUERY_DATASET_ID = "lseg_data_normalised"
 # PROJECT_ID = "genaillentsearch"
 PROJECT_ID = get_project_id()
 
-sql_query_tool = Tool(
+function_query_tool = Tool(
     function_declarations=[
-        geminifunctionsbq.sql_query_func,
-        geminifunctionsbq.list_datasets_func,
-        geminifunctionsbq.list_tables_func,
-        geminifunctionsbq.get_table_func,
-        geminifunctionsbq.sql_query_func,
+        # geminifunctionsbq.list_datasets_func,
+        # geminifunctionsbq.list_tables_func,
+        # geminifunctionsbq.get_table_func,
+        # geminifunctionsbq.sql_query_func,
         geminifunctionfinhub.symbol_lookup,
+        #TODO: Add the other function for the LLM to call
+        #These will access other fin hub api calls
     ],
 )
 
@@ -247,6 +248,7 @@ logging.warning("model name session state initialised")
 
 st.title(f"""Company Agent: built using {st.session_state.modelname}""")
 
+#TODO: Look at the system instruction below and see if it can be improved.
 model = GenerativeModel(
     # "gemini-1.5-pro-002",
     st.session_state.modelname,
@@ -258,12 +260,13 @@ model = GenerativeModel(
                         You can lookup the symbol using the symbol lookup function. Make sure to run the symbol_lookup before any subsequent functions.
                         When doing an analysis of the company, include the company profile, company news, company basic financials and an analysis of the peers
                         Also get the insider sentiment and add a section on that. Include a section on SEC filings."""],
-    tools=[sql_query_tool],
+    tools=[function_query_tool],
 )
 
 response=None
 
 
+#Storing the Gemini response text in session state so on refresh it can be loaded back into the display
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
@@ -271,28 +274,34 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
+#Creating the Gemini calling class and storig it in session state
 if "chat" not in st.session_state:
     st.session_state.chat = model.start_chat()
 
 if "client" not in st.session_state:
     st.session_state.client = bigquery.Client(project="genaillentsearch")
 
+#asking the user for input in the Chat message container 
 if prompt := st.chat_input("What is up?"):
 
+    #displaying the user input in the chat message container
     with st.chat_message("user"):
         st.markdown(prompt)
     
+    #TODO: look at the prompt below see where it is being added to the user
+    #input prompt and see if it can be improved
     prompt_enhancement = """ If the question requires SQL data then Make sure you get the data from the sql query first and then analyse it in its completeness if not get the news directly
             If the question relates to news use the stock symbol ticker and not the RIC code."""
 
 
     # Add user message to chat history
-
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("assistant"):
         message_placeholder = st.empty()
         full_response = ""
-        
+
+
+        #GEMINI API CALL here
         response = st.session_state.chat.send_message(prompt + prompt_enhancement,generation_config=generation_config,
         safety_settings=safety_settings)
         logging.warning("This is the start")
@@ -312,13 +321,20 @@ if prompt := st.chat_input("What is up?"):
         # else:
         #     response, backend_details = handle_gemini_serial_func(handle_api_response, response, message_placeholder, api_requests_and_responses, backend_details)
 
+        #TODO: This code below is assuming that Gemini returns the functions in a seriel fashion
+        #how would you improve it to handle parallel funciton calls
+        #HINT: Look at the commented code above
+
         response = response.candidates[0].content.parts[0]
 
         logging.warning(response)
         logging.warning("First Resonse done")
 
         function_calling_in_process = True
+        #This section handles the response from Gemini. The loop is to handle all the funciton calls
+        #need to complete the action based on the users prompt
         while function_calling_in_process:
+            #This try catch checks if the response is a function call and then handles it
             try:
                 logging.warning("Function loop starting")
                 params = {}
@@ -330,6 +346,7 @@ if prompt := st.chat_input("What is up?"):
                 logging.warning(response.function_call.name)
                 logging.warning(params)
 
+                #Get the function call evaluated by Gemini and call that function to complete part of the request.
                 function_name = response.function_call.name
 
                 if function_name in helperbqfunction.function_handler.keys():
@@ -362,7 +379,7 @@ if prompt := st.chat_input("What is up?"):
 
                 logging.warning("Function Response complete")
 
-
+                #This is to get the fucntion call output and format it to display in the UI
                 backend_details = handle_api_response(message_placeholder, api_requests_and_responses, backend_details)
                         
                 logging.warning("gemini api response completed")
@@ -377,6 +394,7 @@ if prompt := st.chat_input("What is up?"):
 
         time.sleep(3)
 
+        #Gets the final response from Gemini and displays it with the intermediate funciton calls in the UI
         full_response = response.text
         with message_placeholder.container():
             st.markdown(full_response.replace("$", r"\$"))  # noqa: W605

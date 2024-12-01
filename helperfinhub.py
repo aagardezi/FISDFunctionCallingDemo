@@ -1,6 +1,7 @@
 import finnhub
 import helpercode
 
+#TODO: Create your own API key by going to https://finnhub.io/
 finnhub_client = finnhub.Client(api_key="cstluhpr01qj0ou20db0cstluhpr01qj0ou20dbg")
 
 def symbol_lookup(params):

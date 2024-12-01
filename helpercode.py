@@ -2,6 +2,9 @@ import json
 import requests
 from bs4 import BeautifulSoup
 
+#This is a function to access a webpage and download the text from the html or xml document
+#we use it to send the data to Gemini to summarise. We are using it to get the 
+#SEC Filings for a company so we can understand the profle based on the filings
 def get_text_from_url(url):
     try:
         request_header = {
